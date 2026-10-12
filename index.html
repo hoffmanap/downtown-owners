@@ -77,6 +77,8 @@
   .lp-divider{border-top:1px solid var(--panel-border);margin:10px 0;}
   .lp-note{font-size:10.5px;color:var(--text-dim);margin-top:6px;line-height:1.4;}
 
+  .sanborn-blend{mix-blend-mode:multiply;}
+
   #tooltip{position:absolute;pointer-events:none;background:var(--panel);border:1px solid var(--panel-border);
     border-radius:7px;padding:9px 11px;font-family:"Helvetica Neue",Arial,sans-serif;font-size:12.5px;
     max-width:260px;box-shadow:0 6px 20px rgba(0,0,0,.35);z-index:1000;display:none;line-height:1.45;}
@@ -146,8 +148,12 @@ const plainBase = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/servi
 const aerialBase = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
   attribution: 'Esri World Imagery', maxZoom: 21, maxNativeZoom: 19
 });
-const labelsLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
-  attribution: 'Esri', maxZoom: 21, maxNativeZoom: 19, pane: 'shadowPane'
+// Light Gray Canvas's own label partner layer -- actual street names plus a
+// few place labels, transparent background. (The old Reference/World_
+// Boundaries_and_Places service is a general place/landmark label layer,
+// not street names, despite the "Street names" toggle label -- swapped.)
+const labelsLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}', {
+  attribution: 'Esri', maxZoom: 21, maxNativeZoom: 16, pane: 'shadowPane'
 });
 
 plainBase.addTo(map);
@@ -164,15 +170,33 @@ document.getElementById('toggle-labels').addEventListener('change', (e) => {
 });
 
 // --- 1908 Sanborn overlay (georeferenced COGs tiled live via titiler.xyz) ---
+// Adjacent sheets' rectangles overlap slightly (their edges were never cut
+// to a perfect shared seam), and by default the later-added sheet just
+// paints over the earlier one in the overlap strip, hiding whatever detail
+// sits underneath. Rather than try to pick a "winning" sheet per area, put
+// every Sanborn layer in its own isolated pane with mix-blend-mode:multiply:
+// sheets are white paper with black/colored ink, so multiplying lets both
+// sheets' ink show through the overlap (white is a no-op) instead of one
+// fully occluding the other. isolation:isolate on the pane keeps that
+// blending contained to the Sanborn layers themselves, not the basemap or
+// parcel colors underneath.
+const sanbornPane = map.createPane('sanbornPane');
+sanbornPane.style.zIndex = 410;
+sanbornPane.style.isolation = 'isolate';
 const sanbornGroup = L.layerGroup();
 DATA.sanborn.forEach(s => {
   const bounds = L.latLngBounds(s.bounds);
-  const layer = L.tileLayer(s.url, { bounds, opacity: 0.95, maxZoom: 21, maxNativeZoom: 19 });
+  const layer = L.tileLayer(s.url, {
+    bounds, opacity: 0.95, maxZoom: 21, maxNativeZoom: 19,
+    pane: 'sanbornPane', className: 'sanborn-blend',
+  });
   sanbornGroup.addLayer(layer);
 });
 (DATA.sanborn_manual || []).forEach(s => {
   const bounds = L.latLngBounds(s.bounds);
-  const layer = L.imageOverlay(s.url, bounds, { opacity: 0.95 });
+  const layer = L.imageOverlay(s.url, bounds, {
+    opacity: 0.95, pane: 'sanbornPane', className: 'sanborn-blend',
+  });
   sanbornGroup.addLayer(layer);
 });
 document.getElementById('toggle-sanborn').addEventListener('change', (e) => {
